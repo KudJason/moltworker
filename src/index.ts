@@ -47,6 +47,31 @@ function transformErrorMessage(message: string, host: string): string {
   return message;
 }
 
+/**
+ * Check if an error indicates the gateway process has crashed.
+ * The Sandbox SDK throws this when containerFetch/wsConnect is called
+ * but the target process is no longer listening.
+ */
+function isGatewayCrashedError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.message.includes('is not listening');
+}
+
+/**
+ * Kill any existing gateway process so ensureMoltbotGateway() starts fresh.
+ */
+async function killExistingGateway(sandbox: Sandbox): Promise<void> {
+  const process = await findExistingMoltbotProcess(sandbox);
+  if (process) {
+    console.log('[PROXY] Killing crashed gateway process:', process.id);
+    try {
+      await process.kill();
+    } catch (e) {
+      console.log('[PROXY] Failed to kill process (may already be dead):', e);
+    }
+  }
+}
+
 export { Sandbox };
 
 /**
@@ -299,8 +324,38 @@ app.all('*', async (c) => {
       wsRequest = new Request(tokenUrl.toString(), request);
     }
 
-    // Get WebSocket connection to the container
-    const containerResponse = await sandbox.wsConnect(wsRequest, MOLTBOT_PORT);
+    // Get WebSocket connection to the container, with retry on gateway crash
+    let containerResponse: Response;
+    try {
+      containerResponse = await sandbox.wsConnect(wsRequest, MOLTBOT_PORT);
+    } catch (error) {
+      if (isGatewayCrashedError(error)) {
+        console.log('[WS] Gateway crashed, attempting restart and retry...');
+        await killExistingGateway(sandbox);
+        try {
+          await ensureMoltbotGateway(sandbox, c.env);
+          containerResponse = await sandbox.wsConnect(wsRequest, MOLTBOT_PORT);
+        } catch (retryError) {
+          console.error('[WS] Retry after gateway restart failed:', retryError);
+          return c.json(
+            {
+              error: 'Gateway crashed and failed to recover',
+              details: retryError instanceof Error ? retryError.message : 'Unknown error',
+            },
+            503,
+          );
+        }
+      } else {
+        console.error('[WS] Error connecting WebSocket to container:', error);
+        return c.json(
+          {
+            error: 'Error connecting to gateway',
+            details: error instanceof Error ? error.message : 'Unknown error',
+          },
+          502,
+        );
+      }
+    }
     console.log('[WS] wsConnect response status:', containerResponse.status);
 
     // Get the container-side WebSocket
@@ -429,7 +484,43 @@ app.all('*', async (c) => {
   }
 
   console.log('[HTTP] Proxying:', url.pathname + url.search);
-  const httpResponse = await sandbox.containerFetch(request, MOLTBOT_PORT);
+
+  let httpResponse: Response;
+  try {
+    httpResponse = await sandbox.containerFetch(request, MOLTBOT_PORT);
+  } catch (error) {
+    // If the gateway crashed between the health check and the fetch,
+    // kill the dead process, restart the gateway, and retry once.
+    if (isGatewayCrashedError(error)) {
+      console.log('[HTTP] Gateway crashed, attempting restart and retry...');
+      await killExistingGateway(sandbox);
+      try {
+        await ensureMoltbotGateway(sandbox, c.env);
+        httpResponse = await sandbox.containerFetch(request, MOLTBOT_PORT);
+      } catch (retryError) {
+        console.error('[HTTP] Retry after gateway restart failed:', retryError);
+        return c.json(
+          {
+            error: 'Gateway crashed and failed to recover',
+            details: retryError instanceof Error ? retryError.message : 'Unknown error',
+            hint: 'The OpenClaw gateway process crashed. Check worker logs with: wrangler tail',
+          },
+          503,
+        );
+      }
+    } else {
+      console.error('[HTTP] Error proxying request to container:', error);
+      return c.json(
+        {
+          error: 'Error proxying request to gateway',
+          details: error instanceof Error ? error.message : 'Unknown error',
+          hint: 'Check worker logs with: wrangler tail',
+        },
+        502,
+      );
+    }
+  }
+
   console.log('[HTTP] Response status:', httpResponse.status);
 
   // Add debug header to verify worker handled the request
