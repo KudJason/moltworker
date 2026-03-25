@@ -133,7 +133,12 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// Middleware: Initialize sandbox and restore backup if available
+// Middleware: Initialize sandbox stub and restore backup if available.
+// Note: we intentionally do NOT call sandbox.start() here. The Sandbox SDK's
+// containerFetch() auto-starts the container when needed, and the catch-all
+// proxy route uses ensureMoltbotGateway() which handles startup explicitly.
+// Adding start() here would add an unnecessary RPC call on every request,
+// including static assets and health checks that don't need the container.
 app.use('*', async (c, next) => {
   const options = buildSandboxOptions(c.env);
   const sandbox = getSandbox(c.env.Sandbox, 'moltbot', options);
