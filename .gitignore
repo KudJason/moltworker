@@ -63,3 +63,4 @@ test/e2e/.dev.vars
 .npmrc
 
 token_gateway
+feishu-worker/
