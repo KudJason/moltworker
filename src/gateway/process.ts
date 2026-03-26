@@ -62,7 +62,10 @@ export async function findExistingMoltbotProcess(sandbox: Sandbox): Promise<Proc
  * @returns The running gateway process, or null if the gateway is up but we
  *          don't have a process handle (detected via port probe only)
  */
-export async function ensureMoltbotGateway(sandbox: Sandbox, env: MoltbotEnv): Promise<Process | null> {
+export async function ensureMoltbotGateway(
+  sandbox: Sandbox,
+  env: MoltbotEnv,
+): Promise<Process | null> {
   // Check if gateway is already running or starting
   const existingProcess = await findExistingMoltbotProcess(sandbox);
   if (existingProcess) {
@@ -98,7 +101,9 @@ export async function ensureMoltbotGateway(sandbox: Sandbox, env: MoltbotEnv): P
   // Probe the port directly — if it's open, the gateway is up and we're done.
   try {
     if (await isGatewayPortOpen(sandbox)) {
-      console.log(`Port ${MOLTBOT_PORT} already open — gateway running but undetected by listProcesses(), skipping spawn`);
+      console.log(
+        `Port ${MOLTBOT_PORT} already open — gateway running but undetected by listProcesses(), skipping spawn`,
+      );
       return null;
     }
   } catch (e) {
