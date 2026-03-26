@@ -1,0 +1,10 @@
+name = "feishu-moltbot-relay"
+main = "src/index.ts"
+compatibility_date = "2024-03-26"
+
+# -- Setup Instructions --
+# 1. Run `npx wrangler secret put FEISHU_APP_ID`
+# 2. Run `npx wrangler secret put FEISHU_APP_SECRET`
+# 3. Run `npx wrangler secret put FEISHU_ENCRYPT_KEY` (if encryption enabled)
+# 4. Run `npx wrangler secret put MOLTBOT_URL` (e.g. wss://moltbot.yourdomain.workers.dev/ws)
+# 5. Run `npx wrangler secret put MOLTBOT_TOKEN`

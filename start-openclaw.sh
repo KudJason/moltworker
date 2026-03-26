@@ -148,6 +148,33 @@ if (process.env.CF_AI_GATEWAY_MODEL) {
     }
 }
 
+// Custom Model Override support for user (e.g. MiniMax)
+if (process.env.CUSTOM_MODEL_ID) {
+    const customModel = process.env.CUSTOM_MODEL_ID;
+    if (config.models && config.models.providers) {
+        const providerKey = config.models.providers['apiKey'] ? 'apiKey' : 
+                          (config.models.providers['openai-api-key'] ? 'openai-api-key' : 
+                          Object.keys(config.models.providers)[0]);
+        
+        if (providerKey) {
+            config.models.providers[providerKey].models = config.models.providers[providerKey].models || [];
+            // Add the custom model into the provider's valid models array so it passes validation
+            config.models.providers[providerKey].models.push({ 
+                id: customModel, 
+                name: customModel, 
+                contextWindow: 131072, 
+                maxTokens: 8192 
+            });
+            
+            // Set it as default primary agent model
+            config.agents = config.agents || {};
+            config.agents.defaults = config.agents.defaults || {};
+            config.agents.defaults.model = { primary: providerKey + '/' + customModel };
+            console.log('Custom model override activated: ' + providerKey + '/' + customModel);
+        }
+    }
+}
+
 // Telegram configuration
 // Overwrite entire channel object to drop stale keys from old R2 backups
 // that would fail OpenClaw's strict config validation (see #47)
